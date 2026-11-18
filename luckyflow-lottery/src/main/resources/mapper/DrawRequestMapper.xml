@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.lottery.mapper.DrawRequestMapper">
+
+    <!--
+        唯一 request_id 将重复登记收敛为 affectedRows=0；调用方随后在同一短事务中
+        SELECT ... FOR UPDATE 读取真实记录，避免用异常控制正常幂等分支。
+    -->
+    <insert id="insertIfAbsent">
+        INSERT IGNORE INTO draw_request (
+            request_id,
+            user_id,
+            activity_id,
+            status,
+            execution_token,
+            execution_time,
+            result_payload,
+            completed_time,
+            created_time,
+            updated_time
+        ) VALUES (
+            #{request.requestId},
+            #{request.userId},
+            #{request.activityId},
+            #{request.status},
+            #{request.executionToken},
+            #{request.executionTime},
+            #{request.resultPayload},
+            #{request.completedTime},
+            #{request.createdTime},
+            #{request.updatedTime}
+        )
+    </insert>
+
+    <select id="selectByRequestIdForUpdate"
+            resultType="com.luckyflow.lottery.entity.DrawRequest">
+        SELECT
+            request_id,
+            user_id,
+            activity_id,
+            status,
+            execution_token,
+            execution_time,
+            result_payload,
+            completed_time,
+            created_time,
+            updated_time
+        FROM draw_request
+        WHERE request_id = #{requestId}
+        FOR UPDATE
+    </select>
+
+    <!-- execution_token 是执行轮次的 fencing token，旧执行者不能覆盖新一轮结果。 -->
+    <update id="markSuccess">
+        UPDATE draw_request
+        SET status = 1,
+            result_payload = #{resultPayload},
+            completed_time = #{completedTime},
+            updated_time = #{completedTime}
+        WHERE request_id = #{requestId}
+          AND status = 0
+          AND execution_token = #{executionToken}
+    </update>
+
+    <update id="markCancelled">
+        UPDATE draw_request
+        SET status = 2,
+            completed_time = #{completedTime},
+            updated_time = #{completedTime}
+        WHERE request_id = #{requestId}
+          AND status = 0
+          AND execution_token = #{executionToken}
+    </update>
+
+    <!--
+        INIT 超时请求需要判定取消；CANCELLED 请求继续补偿；SUCCESS 请求继续把数据库
+        CONFIRMED 意图推进为 Redis 成功终态。SKIP LOCKED 只降低本轮扫描的选取竞争；
+        返回 ID 后锁即随短事务释放，最终正确性仍依赖后续请求行重查和 Redis 幂等状态机。
+    -->
+    <select id="selectRecoverableRequestIdsForUpdate" resultType="java.lang.String">
+        SELECT draw_request_row.request_id
+        FROM draw_request draw_request_row
+        WHERE (
+            draw_request_row.status = 0
+            AND draw_request_row.execution_time IS NOT NULL
+            AND draw_request_row.execution_time &lt;= #{executionCutoff}
+        )
+        OR (
+            draw_request_row.status = 2
+            AND EXISTS (
+                SELECT 1
+                FROM draw_resource_reservation reservation
+                WHERE reservation.request_id = draw_request_row.request_id
+                  AND reservation.status IN (0, 1)
+                  AND (
+                      reservation.next_retry_time IS NULL
+                      OR reservation.next_retry_time &lt;= #{now}
+                )
+            )
+        )
+        OR (
+            draw_request_row.status = 1
+            AND EXISTS (
+                SELECT 1
+                FROM draw_resource_reservation reservation
+                WHERE reservation.request_id = draw_request_row.request_id
+                  AND reservation.status = 3
+                  AND reservation.terminalized_time IS NULL
+                  AND (
+                      reservation.next_retry_time IS NULL
+                      OR reservation.next_retry_time &lt;= #{now}
+                  )
+            )
+        )
+        ORDER BY draw_request_row.updated_time, draw_request_row.request_id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!--
+        换设备恢复和资格查询必须看到所有 INIT 请求，以及仍有未恢复资源意图的 CANCELLED
+        请求。这里刻意不检查 next_retry_time；重试尚未到期不代表资源已经恢复。
+    -->
+    <select id="selectLatestPendingByOwnerAndActivity"
+            resultType="com.luckyflow.lottery.entity.DrawRequest">
+        SELECT
+            draw_request_row.request_id,
+            draw_request_row.user_id,
+            draw_request_row.activity_id,
+            draw_request_row.status,
+            draw_request_row.execution_token,
+            draw_request_row.execution_time,
+            draw_request_row.result_payload,
+            draw_request_row.completed_time,
+            draw_request_row.created_time,
+            draw_request_row.updated_time
+        FROM draw_request AS draw_request_row
+        WHERE draw_request_row.user_id = #{userId}
+          AND draw_request_row.activity_id = #{activityId}
+          AND (
+              draw_request_row.status = 0
+              OR (
+                  draw_request_row.status = 2
+                  AND EXISTS (
+                      SELECT 1
+                      FROM draw_resource_reservation AS reservation
+                      WHERE reservation.request_id = draw_request_row.request_id
+                        AND reservation.status NOT IN (2, 4)
+                  )
+              )
+          )
+        ORDER BY draw_request_row.updated_time DESC, draw_request_row.request_id DESC
+        LIMIT 1
+    </select>
+
+</mapper>

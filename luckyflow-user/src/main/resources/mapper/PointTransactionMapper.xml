@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.user.mapper.PointTransactionMapper">
+
+    <!-- 唯一键冲突后的锁定当前读用于核对已提交奖励，避免 RR 快照读到过期结果。 -->
+    <select id="selectByBizTypeAndBizIdForShare"
+            resultType="com.luckyflow.user.entity.PointTransaction">
+        SELECT
+            id,
+            user_id,
+            biz_type,
+            biz_id,
+            change_amount,
+            after_balance,
+            create_time
+        FROM point_transaction
+        WHERE biz_type = #{bizType}
+          AND biz_id = #{bizId}
+        FOR SHARE
+    </select>
+
+    <select id="selectPageByUserId"
+            resultType="com.luckyflow.user.entity.PointTransaction">
+        SELECT
+            id,
+            user_id,
+            biz_type,
+            biz_id,
+            change_amount,
+            after_balance,
+            create_time
+        FROM point_transaction
+        WHERE user_id = #{userId}
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countByUserId" resultType="long">
+        SELECT COUNT(*)
+        FROM point_transaction
+        WHERE user_id = #{userId}
+    </select>
+
+</mapper>

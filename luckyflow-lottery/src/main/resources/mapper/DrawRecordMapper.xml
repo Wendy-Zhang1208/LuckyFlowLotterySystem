@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.lottery.mapper.DrawRecordMapper">
+
+    <select id="selectHistoryByUserId"
+            resultType="com.luckyflow.lottery.model.DrawHistoryEntry">
+        SELECT
+            draw_row.id AS draw_record_id,
+            draw_row.activity_id,
+            activity_row.name AS activity_name,
+            draw_row.result_status,
+            winning_row.id AS winning_record_id,
+            winning_row.activity_prize_id,
+            activity_prize_row.prize_id,
+            prize_row.name AS prize_name,
+            activity_prize_row.prize_type_snapshot AS prize_type,
+            draw_row.draw_time
+        FROM draw_record draw_row
+        INNER JOIN activity activity_row
+            ON activity_row.id = draw_row.activity_id
+        LEFT JOIN winning_record winning_row
+            ON winning_row.draw_record_id = draw_row.id
+        LEFT JOIN activity_prize activity_prize_row
+            ON activity_prize_row.id = winning_row.activity_prize_id
+        LEFT JOIN prize prize_row
+            ON prize_row.id = activity_prize_row.prize_id
+        WHERE draw_row.user_id = #{userId}
+        ORDER BY draw_row.draw_time DESC, draw_row.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countHistoryByUserId" resultType="long">
+        SELECT COUNT(*)
+        FROM draw_record
+        WHERE user_id = #{userId}
+    </select>
+
+</mapper>

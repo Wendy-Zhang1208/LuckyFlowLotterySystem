@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.admin.statistics.AdminStatisticsMapper">
+
+    <!-- 统计只读取已经提交的事实表，不能用 Redis 预扣量或 INIT 请求冒充有效抽奖。 -->
+    <select id="selectTotals"
+            resultType="com.luckyflow.admin.statistics.StatisticsTotals">
+        SELECT
+            (
+                SELECT COUNT(*)
+                FROM draw_record draw_row
+                WHERE draw_row.draw_time &gt;= #{startTime}
+                  AND draw_row.draw_time &lt; #{endTime}
+                  <if test="activityId != null">
+                      AND draw_row.activity_id = #{activityId}
+                  </if>
+            ) AS draw_count,
+            (
+                SELECT COUNT(DISTINCT draw_row.user_id)
+                FROM draw_record draw_row
+                WHERE draw_row.draw_time &gt;= #{startTime}
+                  AND draw_row.draw_time &lt; #{endTime}
+                  <if test="activityId != null">
+                      AND draw_row.activity_id = #{activityId}
+                  </if>
+            ) AS participant_count,
+            (
+                SELECT COUNT(*)
+                FROM winning_record winning_row
+                INNER JOIN draw_record draw_row ON draw_row.id = winning_row.draw_record_id
+                WHERE draw_row.draw_time &gt;= #{startTime}
+                  AND draw_row.draw_time &lt; #{endTime}
+                  <if test="activityId != null">
+                      AND draw_row.activity_id = #{activityId}
+                  </if>
+            ) AS win_count,
+            (
+                SELECT COALESCE(-SUM(point_row.change_amount), 0)
+                FROM point_transaction point_row
+                INNER JOIN draw_record draw_row
+                    ON draw_row.id = point_row.biz_id
+                   AND draw_row.user_id = point_row.user_id
+                WHERE point_row.biz_type = 'DRAW'
+                  AND point_row.change_amount &lt; 0
+                  AND draw_row.draw_time &gt;= #{startTime}
+                  AND draw_row.draw_time &lt; #{endTime}
+                  <if test="activityId != null">
+                      AND draw_row.activity_id = #{activityId}
+                  </if>
+            ) AS points_consumed,
+            (
+                SELECT COUNT(*)
+                FROM winning_record winning_row
+                INNER JOIN draw_record draw_row ON draw_row.id = winning_row.draw_record_id
+                INNER JOIN activity_prize activity_prize_row
+                    ON activity_prize_row.id = winning_row.activity_prize_id
+                WHERE activity_prize_row.prize_type_snapshot = 1
+                  AND draw_row.draw_time &gt;= #{startTime}
+                  AND draw_row.draw_time &lt; #{endTime}
+                  <if test="activityId != null">
+                      AND draw_row.activity_id = #{activityId}
+                  </if>
+            ) AS physical_win_count,
+            (
+                SELECT COUNT(DISTINCT winning_row.id)
+                FROM winning_record winning_row
+                INNER JOIN draw_record draw_row ON draw_row.id = winning_row.draw_record_id
+                INNER JOIN activity_prize activity_prize_row
+                    ON activity_prize_row.id = winning_row.activity_prize_id
+                INNER JOIN fulfillment_order fulfillment_row
+                    ON fulfillment_row.winning_record_id = winning_row.id
+                   AND fulfillment_row.status IN (1, 2, 3, 4)
+                WHERE activity_prize_row.prize_type_snapshot = 1
+                  AND draw_row.draw_time &gt;= #{startTime}
+                  AND draw_row.draw_time &lt; #{endTime}
+                  <if test="activityId != null">
+                      AND draw_row.activity_id = #{activityId}
+                  </if>
+            ) AS claimed_physical_win_count
+    </select>
+
+    <select id="selectPrizeTypeCounts"
+            resultType="com.luckyflow.admin.statistics.PrizeTypeCount">
+        SELECT
+            activity_prize_row.prize_type_snapshot AS prize_type,
+            COUNT(*) AS win_count
+        FROM winning_record winning_row
+        INNER JOIN draw_record draw_row ON draw_row.id = winning_row.draw_record_id
+        INNER JOIN activity_prize activity_prize_row
+            ON activity_prize_row.id = winning_row.activity_prize_id
+        WHERE draw_row.draw_time &gt;= #{startTime}
+          AND draw_row.draw_time &lt; #{endTime}
+          AND activity_prize_row.prize_type_snapshot IS NOT NULL
+          <if test="activityId != null">
+              AND draw_row.activity_id = #{activityId}
+          </if>
+        GROUP BY activity_prize_row.prize_type_snapshot
+        ORDER BY activity_prize_row.prize_type_snapshot
+    </select>
+
+</mapper>

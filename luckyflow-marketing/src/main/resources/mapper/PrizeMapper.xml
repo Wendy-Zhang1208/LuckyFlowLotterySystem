@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.marketing.mapper.PrizeMapper">
+
+    <sql id="prizeColumns">
+        id, name, description, illustration, type, total_inventory,
+        available_inventory, value, status, create_time, update_time
+    </sql>
+
+    <sql id="adminFilters">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (name LIKE CONCAT('%', #{keyword}, '%')
+                     OR description LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="type != null">
+                AND type = #{type}
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectAdminPage" resultType="com.luckyflow.marketing.entity.Prize">
+        SELECT <include refid="prizeColumns"/>
+        FROM prize
+        <include refid="adminFilters"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(*)
+        FROM prize
+        <include refid="adminFilters"/>
+    </select>
+
+</mapper>

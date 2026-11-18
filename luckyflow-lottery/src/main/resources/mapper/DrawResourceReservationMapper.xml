@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.lottery.mapper.DrawResourceReservationMapper">
+
+    <sql id="reservationColumns">
+        id,
+        request_id,
+        resource_type,
+        resource_id,
+        attempt_no,
+        resource_key,
+        reservation_id,
+        reservation_key,
+        status,
+        retry_count,
+        next_retry_time,
+        last_error,
+        reserved_time,
+        resolved_time,
+        terminalized_time,
+        created_time,
+        updated_time
+    </sql>
+
+    <!-- 唯一意图由请求、资源类型和尝试序号确定，resourceId 由 Service 校验不可漂移。 -->
+    <select id="findByIntent"
+            resultType="com.luckyflow.lottery.entity.DrawResourceReservation">
+        SELECT
+            <include refid="reservationColumns"/>
+        FROM draw_resource_reservation
+        WHERE request_id = #{requestId}
+          AND resource_type = #{resourceType}
+          AND attempt_no = #{attemptNo}
+    </select>
+
+    <update id="markReserved">
+        UPDATE draw_resource_reservation
+        SET status = 1,
+            reserved_time = #{reservedTime},
+            updated_time = #{reservedTime}
+        WHERE id = #{id}
+          AND status = 0
+    </update>
+
+    <update id="markNotReserved">
+        UPDATE draw_resource_reservation
+        SET status = 2,
+            resolved_time = #{resolvedTime},
+            next_retry_time = NULL,
+            last_error = NULL,
+            updated_time = #{resolvedTime}
+        WHERE id = #{id}
+          AND status = 0
+    </update>
+
+    <select id="selectPendingCompensation"
+            resultType="com.luckyflow.lottery.entity.DrawResourceReservation">
+        SELECT
+            <include refid="reservationColumns"/>
+        FROM draw_resource_reservation
+        WHERE request_id = #{requestId}
+          AND status IN (0, 1)
+          AND (
+              next_retry_time IS NULL
+              OR next_retry_time &lt;= #{now}
+          )
+        ORDER BY resource_type, attempt_no, id
+    </select>
+
+    <!--
+        CANCELLED 只有在全部 intent 均为 NOT_RESERVED(2) 或 COMPENSATED(4) 时才恢复完成。
+        CONFIRMED(3) 对 CANCELLED 属于不一致状态，必须保守地计为未完成。
+    -->
+    <select id="countUnsafeCancellationStates" resultType="int">
+        SELECT COUNT(*)
+        FROM draw_resource_reservation
+        WHERE request_id = #{requestId}
+          AND status NOT IN (2, 4)
+    </select>
+
+    <update id="markCompensated">
+        UPDATE draw_resource_reservation
+        SET status = 4,
+            resolved_time = #{compensatedTime},
+            next_retry_time = NULL,
+            last_error = NULL,
+            updated_time = #{compensatedTime}
+        WHERE id = #{id}
+          AND status IN (0, 1)
+    </update>
+
+    <update id="markCompensationFailed">
+        UPDATE draw_resource_reservation
+        SET retry_count = retry_count + 1,
+            next_retry_time = #{nextRetryTime},
+            last_error = #{lastError},
+            updated_time = #{now}
+        WHERE id = #{id}
+          AND status IN (0, 1)
+    </update>
+
+    <update id="confirmReservedByRequestId">
+        UPDATE draw_resource_reservation
+        SET status = 3,
+            resolved_time = #{confirmedTime},
+            terminalized_time = NULL,
+            next_retry_time = #{confirmedTime},
+            last_error = NULL,
+            updated_time = #{confirmedTime}
+        WHERE request_id = #{requestId}
+          AND status = 1
+    </update>
+
+    <select id="selectPendingConfirmation"
+            resultType="com.luckyflow.lottery.entity.DrawResourceReservation">
+        SELECT
+            <include refid="reservationColumns"/>
+        FROM draw_resource_reservation
+        WHERE request_id = #{requestId}
+          AND status = 3
+          AND terminalized_time IS NULL
+          AND (
+              next_retry_time IS NULL
+              OR next_retry_time &lt;= #{now}
+          )
+        ORDER BY resource_type, attempt_no, id
+    </select>
+
+    <update id="markConfirmationCompleted">
+        UPDATE draw_resource_reservation
+        SET terminalized_time = #{terminalizedTime},
+            next_retry_time = NULL,
+            last_error = NULL,
+            updated_time = #{terminalizedTime}
+        WHERE id = #{id}
+          AND status = 3
+          AND terminalized_time IS NULL
+    </update>
+
+    <update id="markConfirmationFailed">
+        UPDATE draw_resource_reservation
+        SET retry_count = retry_count + 1,
+            next_retry_time = #{nextRetryTime},
+            last_error = #{lastError},
+            updated_time = #{now}
+        WHERE id = #{id}
+          AND status = 3
+          AND terminalized_time IS NULL
+    </update>
+
+</mapper>

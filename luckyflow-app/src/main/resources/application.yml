@@ -1,0 +1,109 @@
+spring:
+  datasource:
+    url: ${LUCKYFLOW_DB_URL:jdbc:mysql://localhost:3306/lottery}
+    username: ${LUCKYFLOW_DB_USERNAME:}
+    password: ${LUCKYFLOW_DB_PASSWORD:}
+  data:
+    redis:
+      host: ${LUCKYFLOW_REDIS_HOST:127.0.0.1}
+      port: ${LUCKYFLOW_REDIS_PORT:6379}
+  rabbitmq:
+    host: ${LUCKYFLOW_RABBITMQ_HOST:127.0.0.1}
+    port: ${LUCKYFLOW_RABBITMQ_PORT:5672}
+    username: ${LUCKYFLOW_RABBITMQ_USERNAME:}
+    password: ${LUCKYFLOW_RABBITMQ_PASSWORD:}
+    virtual-host: ${LUCKYFLOW_RABBITMQ_VIRTUAL_HOST:/}
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+  mail:
+    host: ${LUCKYFLOW_SMTP_HOST:localhost}
+    port: ${LUCKYFLOW_SMTP_PORT:25}
+    username: ${LUCKYFLOW_SMTP_USERNAME:}
+    password: ${LUCKYFLOW_SMTP_PASSWORD:}
+    properties:
+      mail.smtp.auth: ${LUCKYFLOW_SMTP_AUTH:false}
+      mail.smtp.starttls.enable: ${LUCKYFLOW_SMTP_STARTTLS:false}
+      mail.smtp.connectiontimeout: ${LUCKYFLOW_SMTP_CONNECTION_TIMEOUT_MILLIS:10000}
+      mail.smtp.timeout: ${LUCKYFLOW_SMTP_READ_TIMEOUT_MILLIS:10000}
+      mail.smtp.writetimeout: ${LUCKYFLOW_SMTP_WRITE_TIMEOUT_MILLIS:10000}
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+
+luckyflow:
+  outbox:
+    scheduling-enabled: true
+    batch-size: 50
+    publish-fixed-delay-millis: 3000
+    recovery-fixed-delay-millis: 30000
+    processing-timeout: 2m
+  fulfillment:
+    # 实物中奖后允许用户领取的自然日窗口；超期 CAS 会拒绝领取。
+    claim-period-days: ${LUCKYFLOW_FULFILLMENT_CLAIM_PERIOD_DAYS:7}
+  auth:
+    allowed-origins: ${LUCKYFLOW_ALLOWED_ORIGINS:http://localhost:5173}
+    jwt:
+      issuer: ${LUCKYFLOW_JWT_ISSUER:luckyflow}
+      # 部署环境必须提供至少 256 bit 的 Base64 密钥；生产配置无弱默认值。
+      secret-base64: ${LUCKYFLOW_JWT_SECRET:}
+      access-token-ttl: ${LUCKYFLOW_JWT_ACCESS_TOKEN_TTL:30m}
+    verification:
+      # 对验证码和联系方式键做 HMAC，部署环境必须提供独立 pepper。
+      pepper: ${LUCKYFLOW_VERIFICATION_PEPPER:}
+      code-ttl: ${LUCKYFLOW_VERIFICATION_CODE_TTL:5m}
+      send-interval: ${LUCKYFLOW_VERIFICATION_SEND_INTERVAL:60s}
+      max-attempts: ${LUCKYFLOW_VERIFICATION_MAX_ATTEMPTS:5}
+      hourly-limit: ${LUCKYFLOW_VERIFICATION_HOURLY_LIMIT:5}
+      daily-limit: ${LUCKYFLOW_VERIFICATION_DAILY_LIMIT:20}
+      ip-hourly-limit: ${LUCKYFLOW_VERIFICATION_IP_HOURLY_LIMIT:30}
+  marketing:
+    publication-recovery:
+      enabled: true
+      fixed-delay-millis: 30000
+    lifecycle:
+      enabled: true
+      batch-size: 100
+      fixed-delay-millis: 30000
+  rabbit:
+    reward-consumer:
+      enabled: true
+      auto-startup: true
+      concurrency: 2
+      prefetch: 10
+      confirm-timeout-millis: 10000
+      infrastructure-delivery-limit: 5
+      infrastructure-retry-min-millis: 1000
+      infrastructure-retry-max-millis: 5000
+      retry-one-delay-millis: 5000
+      retry-two-delay-millis: 25000
+    notification-consumer:
+      enabled: true
+      auto-startup: true
+      concurrency: 2
+      prefetch: 10
+      infrastructure-delivery-limit: 5
+      infrastructure-retry-min-millis: 1000
+      infrastructure-retry-max-millis: 5000
+  notification:
+    scheduling-enabled: true
+    batch-size: 50
+    dispatch-fixed-delay-millis: 5000
+    recovery-fixed-delay-millis: 30000
+    processing-timeout: 2m
+    provider-timeout: 10s
+    executor-core-pool-size: 2
+    executor-max-pool-size: 4
+    executor-queue-capacity: 100
+    email-from: ${LUCKYFLOW_NOTIFICATION_EMAIL_FROM:no-reply@luckyflow.local}
+  lottery:
+    redis:
+      inventory-terminal-reservation-ttl-seconds: 604800
+      daily-missing-reservation-ttl-seconds: 86400
+    recovery:
+      enabled: true
+      request-timeout-seconds: 120
+      fixed-delay-millis: 5000
+      batch-size: 100

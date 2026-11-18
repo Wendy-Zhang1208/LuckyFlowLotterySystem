@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.fulfillment.mapper.UserVirtualPrizeMapper">
+
+    <select id="selectByWinningRecordIdForShare"
+            resultType="com.luckyflow.fulfillment.entity.UserVirtualPrize">
+        SELECT
+            id,
+            user_id,
+            prize_id,
+            winning_record_id,
+            status,
+            expire_time,
+            use_time,
+            create_time,
+            update_time
+        FROM user_virtual_prize
+        WHERE winning_record_id = #{winningRecordId}
+        FOR SHARE
+    </select>
+
+</mapper>

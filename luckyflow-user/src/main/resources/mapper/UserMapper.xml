@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.user.mapper.UserMapper">
+
+    <!-- 管理查询仍不读取 password_hash，避免凭据哈希进入非认证用例。 -->
+    <sql id="adminUserColumns">
+        id, account, nickname, birth_date, avatar_key, phone, phone_verified_at,
+        email, email_verified_at, role, status, create_time, update_time
+    </sql>
+
+    <sql id="adminUserFilters">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (account LIKE CONCAT('%', #{keyword}, '%')
+                     OR nickname LIKE CONCAT('%', #{keyword}, '%')
+                     OR email LIKE CONCAT('%', #{keyword}, '%')
+                     OR phone LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectAdminPage" resultType="com.luckyflow.user.entity.User">
+        SELECT <include refid="adminUserColumns"/>
+        FROM `user`
+        <include refid="adminUserFilters"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(*)
+        FROM `user`
+        <include refid="adminUserFilters"/>
+    </select>
+
+</mapper>

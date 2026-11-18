@@ -1,0 +1,154 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.notification.mapper.NotificationRecordMapper">
+
+    <sql id="notificationRecordColumns">
+        id,
+        winning_record_id,
+        user_id,
+        channel,
+        recipient,
+        status,
+        retry_count,
+        next_retry_time,
+        processing_token,
+        processing_time,
+        send_time,
+        last_error,
+        create_time,
+        update_time
+    </sql>
+
+    <!-- 唯一键竞争后使用锁定当前读核对已有通知，避免把冲突数据误判为业务幂等。 -->
+    <select id="selectByWinningRecordIdAndChannelForShare"
+            resultType="com.luckyflow.notification.entity.NotificationRecord">
+        SELECT
+            <include refid="notificationRecordColumns"/>
+        FROM notification_record
+        WHERE winning_record_id = #{winningRecordId}
+          AND channel = #{channel}
+        FOR SHARE
+    </select>
+
+    <!-- SKIP LOCKED 允许多个调度实例并行领取不同通知，查询和状态迁移必须处于同一短事务。 -->
+    <select id="selectPendingForUpdate"
+            resultType="com.luckyflow.notification.entity.NotificationRecord">
+        SELECT
+            <include refid="notificationRecordColumns"/>
+        FROM notification_record
+        WHERE status = 0
+          AND next_retry_time IS NOT NULL
+          AND next_retry_time &lt;= #{now}
+        ORDER BY next_retry_time, id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <update id="markProcessing">
+        UPDATE notification_record
+        SET status = 1,
+            processing_token = #{processingToken},
+            processing_time = #{processingTime},
+            next_retry_time = NULL,
+            update_time = #{processingTime}
+        WHERE id = #{id}
+          AND status = 0
+          AND next_retry_time IS NOT NULL
+          AND next_retry_time &lt;= #{processingTime}
+    </update>
+
+    <!--
+        异步任务可能在执行器中排队超过恢复阈值；真正发送前用 attempt fencing 确认其仍有效，
+        并从实际开始调用服务商的时刻重新计算超时窗口。
+    -->
+    <update id="markSendingStarted">
+        UPDATE notification_record
+        SET processing_time = #{processingTime},
+            update_time = #{processingTime}
+        WHERE id = #{id}
+          AND status = 1
+          AND processing_token = #{processingToken}
+          AND retry_count = #{expectedRetryCount}
+    </update>
+
+    <!--
+        成功结果不校验 token，以接纳确实调用过服务商的迟到成功；仅允许非 SUCCESS 合法状态进入成功终态。
+        一旦进入 SUCCESS，失败处理和超时恢复都无法再覆盖。
+    -->
+    <update id="markSucceeded">
+        UPDATE notification_record
+        SET status = 2,
+            processing_token = NULL,
+            processing_time = NULL,
+            send_time = #{sendTime},
+            next_retry_time = NULL,
+            last_error = NULL,
+            update_time = #{updatedTime}
+        WHERE id = #{id}
+          AND status IN (0, 1, 3)
+    </update>
+
+    <!-- token、状态和重试次数共同构成 attempt fencing，迟到失败不能覆盖成功或新一轮发送。 -->
+    <update id="markFailed">
+        UPDATE notification_record
+        SET status = #{targetStatus},
+            retry_count = retry_count + 1,
+            next_retry_time = #{nextRetryTime},
+            processing_token = NULL,
+            processing_time = NULL,
+            last_error = #{lastError},
+            update_time = #{updatedTime}
+        WHERE id = #{id}
+          AND status = 1
+          AND processing_token = #{processingToken}
+          AND retry_count = #{expectedRetryCount}
+          AND #{targetStatus} IN (0, 3)
+    </update>
+
+    <select id="selectTimedOutProcessingForUpdate"
+            resultType="com.luckyflow.notification.entity.NotificationRecord">
+        SELECT
+            <include refid="notificationRecordColumns"/>
+        FROM notification_record
+        WHERE status = 1
+          AND processing_time IS NOT NULL
+          AND processing_time &lt;= #{cutoff}
+        ORDER BY processing_time, id
+        LIMIT #{limit}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <select id="selectAdminPage"
+            resultType="com.luckyflow.notification.entity.NotificationRecord">
+        SELECT
+            <include refid="notificationRecordColumns"/>
+        FROM notification_record
+        <where>
+            <if test="status != null">
+                status = #{status}
+            </if>
+            <if test="channel != null">
+                AND channel = #{channel}
+            </if>
+        </where>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(*)
+        FROM notification_record
+        <where>
+            <if test="status != null">
+                status = #{status}
+            </if>
+            <if test="channel != null">
+                AND channel = #{channel}
+            </if>
+        </where>
+    </select>
+
+</mapper>

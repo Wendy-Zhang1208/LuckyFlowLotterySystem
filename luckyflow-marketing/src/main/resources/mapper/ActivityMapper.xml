@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper
+        PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.luckyflow.marketing.mapper.ActivityMapper">
+
+    <sql id="activityColumns">
+        id, name, summary, theme_key, start_time, end_time, daily_draw_limit,
+        point_cost, no_win_weight, status, create_time, update_time
+    </sql>
+
+    <!-- ONGOING 与真实抽奖条件保持一致：必须已进入 RUNNING 且处于服务器时间窗口。 -->
+    <select id="selectPublicOngoingPage"
+            resultType="com.luckyflow.marketing.entity.Activity">
+        SELECT <include refid="activityColumns"/>
+        FROM activity
+        WHERE status = 3
+          AND start_time &lt;= #{now}
+          AND end_time &gt; #{now}
+        <if test="keyword != null and keyword != ''">
+          AND (name LIKE CONCAT('%', #{keyword}, '%')
+               OR summary LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+        ORDER BY start_time ASC, id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPublicOngoing" resultType="long">
+        SELECT COUNT(*)
+        FROM activity
+        WHERE status = 3
+          AND start_time &lt;= #{now}
+          AND end_time &gt; #{now}
+        <if test="keyword != null and keyword != ''">
+          AND (name LIKE CONCAT('%', #{keyword}, '%')
+               OR summary LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </select>
+
+    <sql id="publicFilters">
+        WHERE status IN (2, 3, 4)
+        <choose>
+            <when test="status == 'ONGOING'">
+                AND status = 3 AND start_time &lt;= #{now} AND end_time &gt; #{now}
+            </when>
+            <when test="status == 'UPCOMING'">
+                AND status IN (2, 3) AND end_time &gt; #{now}
+                AND (status = 2 OR start_time &gt; #{now})
+            </when>
+            <when test="status == 'ENDED'">
+                AND (status = 4 OR end_time &lt;= #{now})
+            </when>
+        </choose>
+        <if test="keyword != null and keyword != ''">
+            AND (name LIKE CONCAT('%', #{keyword}, '%')
+                 OR summary LIKE CONCAT('%', #{keyword}, '%'))
+        </if>
+    </sql>
+
+    <select id="selectPublicPage" resultType="com.luckyflow.marketing.entity.Activity">
+        SELECT <include refid="activityColumns"/>
+        FROM activity
+        <include refid="publicFilters"/>
+        ORDER BY start_time ASC, id ASC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countPublic" resultType="long">
+        SELECT COUNT(*) FROM activity
+        <include refid="publicFilters"/>
+    </select>
+
+    <!-- 草稿和待审核活动对匿名访问者表现为不存在。 -->
+    <select id="selectPublicById"
+            resultType="com.luckyflow.marketing.entity.Activity">
+        SELECT <include refid="activityColumns"/>
+        FROM activity
+        WHERE id = #{activityId}
+          AND status IN (2, 3, 4)
+    </select>
+
+    <select id="selectPublishedReadyToRun" resultType="long">
+        SELECT id
+        FROM activity
+        WHERE status = 2
+          AND start_time &lt;= #{now}
+          AND end_time &gt; #{now}
+        ORDER BY start_time ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectPublishedReadyToEnd" resultType="long">
+        SELECT id
+        FROM activity
+        WHERE status = 2
+          AND end_time &lt;= #{now}
+        ORDER BY end_time ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="selectRunningReadyToEnd" resultType="long">
+        SELECT id
+        FROM activity
+        WHERE status = 3
+          AND end_time &lt;= #{now}
+        ORDER BY end_time ASC, id ASC
+        LIMIT #{limit}
+    </select>
+
+    <sql id="adminFilters">
+        <where>
+            <if test="keyword != null and keyword != ''">
+                AND (name LIKE CONCAT('%', #{keyword}, '%')
+                     OR summary LIKE CONCAT('%', #{keyword}, '%'))
+            </if>
+            <if test="status != null">
+                AND status = #{status}
+            </if>
+        </where>
+    </sql>
+
+    <select id="selectAdminPage" resultType="com.luckyflow.marketing.entity.Activity">
+        SELECT <include refid="activityColumns"/>
+        FROM activity
+        <include refid="adminFilters"/>
+        ORDER BY create_time DESC, id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+    <select id="countAdminPage" resultType="long">
+        SELECT COUNT(*)
+        FROM activity
+        <include refid="adminFilters"/>
+    </select>
+
+</mapper>
